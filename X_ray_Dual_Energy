@@ -1,0 +1,330 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# 테스트 이미지 입력
+src = ('C:/Users/user/Desktop/CV2_TEST/Fig-13-RoseBMP-240x180-pixels.PNG')
+
+# 이미지 경로 지정
+Images_file_path = 'C:/Users/user/Desktop/lungman_image'
+Images_file_name = os.listdir(Images_file_path)
+Images_file_nums = len(Images_file_name)
+
+# 이름 구별할 리스트 생성
+input_name_list = ['80kV', '120kV']
+name_list_0 = []
+name_list_1 = []
+
+for i in range(Images_file_nums):
+    if input_name_list[0] in Images_file_name[i]:
+        name_list_0.append(Images_file_name[i])
+    elif input_name_list[1] in Images_file_name[i]:
+        name_list_1.append(Images_file_name[i])
+
+# bite 데이터 bit 데이터 변경
+def get_convert_bite_bit(x, y, nums, src):
+    # 입력 픽셀 np.array 생성
+    X_pixel = x
+    Y_pixel = y
+    temp_array = np.zeros([X_pixel * Y_pixel])
+
+    # 입력 이미지 개수 만큼 변환 (반복문)
+    # 16bit(int) - u2 , 32bit(float) -f4
+    for i in range(nums):
+        with open(Images_file_path + '/' + src[i], "rb") as file:
+            bit_data = np.fromfile(file, dtype='u2')
+            temp_array += bit_data
+            # 평균값
+            temp_array /= nums
+            # reshape (x_pixel ,y_pixcel)
+            temp_array = temp_array.reshape(X_pixel, Y_pixel)
+
+    return temp_array
+
+# plt 이미지 출력 함수
+def get_image_show_plt(title, src):
+    plt.title(title)
+    plt.imshow(src)
+    plt.colorbar()
+
+# cv2 이미지 출력 함수
+def get_image_show(image_name, src):
+    cv2.imshow(image_name, src)
+    cv2.waitKey()
+
+# 리 스케일링 함수 (8bit)
+def get_resize_image(src, x, y):
+    # fx ,fy 스케일링 이용 (입력값 베율)
+    dst1 = cv2.resize(src, (0, 0), fx=x, fy=y, interpolation=cv2.INTER_LINEAR)
+    return dst1
+
+# https://www.edwith.org/medical-20200327/lecture/63169?isDesc=false
+# 16비트 - 8비트 변환 (linear normalization)
+def get_convert_16to8bit(im):
+    min_16bit = np.min(im)
+    max_16bit = np.max(im)
+    # 0 ~ 65535(16bit) to 0 ~ 255(8bit)
+    image_8bit = np.array(np.rint((255 * (im - min_16bit)) / float(max_16bit - min_16bit)), dtype=np.uint8)
+    return image_8bit
+
+def get_covert_8to16bit(im):
+    min_8bit = 0
+    max_8bit = 255
+    image_16bit = np.array(np.rint())
+    pass
+
+# 그레이 이미지 반환 get_gray_color_file
+def get_gray_color_file(src):
+    return cv2.imread((src), cv2.IMREAD_GRAYSCALE)
+
+# BGR 이미지 Gray 로 변경 (cvtcolor , src : ndarray , return : ndarray)
+def get_gray_color(src: list) -> list:
+    return cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+
+# 샤프닝 함수 https://deep-learning-study.tistory.com/155?category=946336
+# 가우시안 블러   https://deep-learning-study.tistory.com/144 (blurred)
+def get_sharpening_image(src):
+    # CV2.GaussianBlur 사용
+    # sigma 값 2
+    blr = cv2.GaussianBlur(src, (0, 0), 2)
+    # 샤프닝 계수 입력
+    a = 2.0
+    # np.clip 함수 사용
+    # min , max 에 대해서 min 보다 작은값 0(min) , max 보다 큰값 255(max)
+    # blurred + a(계수) * differential = sharpening ++
+    dst = np.clip((1 + a) * src - a * blr, 0, 255).astype(np.uint8)
+    return dst
+
+
+# 8비트 이미지 히스토그램
+def get_show_histogram(src):
+    hist = cv2.calcHist([src], [0], None, [256], [0, 256])
+    plt.plot(hist)
+
+# Histogram Equalization (cumulated sum)
+def get_hist_equl(src):
+    dst = cv2.equalizeHist(src)
+    return dst
+
+
+# sobel 알고리즘
+def get_gradient_Sobel(im):
+    # 가우시안 스무딩
+    im = cv2.GaussianBlur(im, (0, 0), 2)
+    # 소벨 오퍼레이터 적용 x,y
+    grad_x = cv2.Sobel(im, cv2.CV_8U, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(im, cv2.CV_8U, 0, 1, ksize=3)
+    # x,y 방향 기울기 합치기
+    grad_image = cv2.addWeighted(np.absolute(grad_x), 0.5, np.absolute(grad_y), 0.5, 0)
+    return grad_image
+
+# Canny 알고리즘
+def get_gradient_Canny(im, th1, th2):
+    # 가우시안 스무딩
+    im = cv2.GaussianBlur(im, (0, 0), 2)
+    grad_image_canny = cv2.Canny(im, cv2.CV_8U, th1, th2)
+    return grad_image_canny
+
+
+# Active contour 알고리즘
+# img (grayscaled - 8bit)
+def get_contour(img):
+    #img = cv2.imread(src)
+    #im_gray = get_gray_color(img)
+    ret, im_binary = cv2.threshold(img, 127, 255, 0)
+    # findContours() : (원본 이미지,추출모드 설정,근사방법) -> (contour, hierarchy)
+    # 추출 모드 TREE
+    contours, hierarchy = cv2.findContours(im_binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # 추출 모드 External
+    #contours, hierarchy = cv2.findContours(im_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # drawContours() : (원본이미지,contours,contour index)
+    for cnt in contours:
+        # 외각선 표시
+        cv2.drawContours(img,[cnt],0,(255,0,0),1)
+        # 내부 채우기
+        #cv2.drawContours(img,[cnt],0,(255,0,0),-1)
+
+    # 컨투어 마스크 리턴
+    return im_binary
+    # 마스크 외각 선 리턴 (내부 채우기 -1로 조절가능)
+    return img
+
+# contour 비트마스크 연산
+def get_contour_and(img):
+    img = img
+    contour_image = get_contour(img)
+    new_image = cv2.bitwise_and(img,contour_image)
+    return new_image
+
+    # 이미지 반전 ~frame
+
+
+# 배경제거 함수 https://bkshin.tistory.com/entry/OpenCV-30-%EB%B0%B0%EA%B2%BD-%EC%A0%9C%EA%B1%B0Background-Subtraction?category=1148027
+def get_background_sub(img):
+    pass
+
+
+def get_grab_cut(img):
+    pass
+
+
+"""
+
+cv2.bitwise_and 
+
+and 연산을 통하여 contour 부분 data를 추출 
+
+"""
+""""
+
+7/13 
+외각선 컨투어 구현 (Active contour) 구현 
+= 외각선 폐 검출
+
+
+7/13
+이미지 분포 알고리즘 계산 버전
+Random Sample consensus
+= Ransac 알고리즘 
+https://gnaseel.tistory.com/33
+https://darkpgmr.tistory.com/61?category=460965
+http://www.cse.yorku.ca/~kosta/CompVis_Notes/ransac.pdf
+
+
+- 1. 머신러닝 기반 알고리즘 
+- 2. Reconstruction 관련 알고리즘
+- 3. MFC (C++) or PyQT(python) 응용 프로그램 생성 관련  (Active contour 관련 함수 구현 ++)
+
+"""
+
+# enhancement 수식 구현
+
+# Anisotropic diffusion filtering
+# https://www.edwith.org/medical-20200327/lecture/63173?isDesc=false
+def Anisotropic_diffusion(src):
+    pass
+
+# blood vessel enhancement
+# https://www.programmersought.com/article/25036356398/
+def vessel_enhancement(src):
+    pass
+
+# super resolution(SR) in medical imaging
+def get_SR_image(src):
+    pass
+
+
+
+
+# 이미지 처리 객체
+
+# X-ray image (16bit)
+X_image_80kV = get_convert_bite_bit(3072, 3072, 1, name_list_0)
+X_image_120kV = get_convert_bite_bit(3072, 3072, 1, name_list_1)
+
+# X-ray image (8bit)
+X_image_80kV_8bit = get_convert_16to8bit(X_image_80kV)
+X_image_80kV_8bit_resized = get_resize_image(X_image_80kV_8bit, 0.25, 0.25)
+X_image_120kV_8bit = get_convert_16to8bit(X_image_120kV)
+X_image_120kV_8bit_resized = get_resize_image(X_image_120kV_8bit, 0.25, 0.25)
+
+# sharpening X-ray image
+X_image_80kV_sharpe = get_sharpening_image(X_image_80kV_8bit_resized)
+X_image_120kV_sharpe = get_sharpening_image(X_image_120kV_8bit_resized)
+
+# Edge detection (Sobel,canny)
+X_image_80kV_Sobel = get_gradient_Sobel(X_image_80kV_8bit_resized)
+X_image_120kV_Sobel = get_gradient_Sobel(X_image_120kV_8bit_resized)
+
+X_image_80kV_canny = get_gradient_Canny(X_image_80kV_8bit_resized, 14, 222)
+X_image_120kV_canny = get_gradient_Canny(X_image_120kV_8bit_resized, 14, 222)
+
+# sharp edge detection
+X_image_80kV_s_Sobel = get_gradient_Sobel(X_image_80kV_sharpe)
+X_image_120kV_s_Sobel = get_gradient_Sobel(X_image_120kV_sharpe)
+
+X_image_80kV_s_canny = get_gradient_Canny(X_image_80kV_sharpe, 14, 222)
+X_image_120kV_s_canny = get_gradient_Canny(X_image_120kV_sharpe, 14, 222)
+
+# X-ray image sharpe + hist eaual
+X_image_80kV_sharpe_hist = get_hist_equl(X_image_80kV_sharpe)
+X_image_120kV_sharpe_hist = get_hist_equl(X_image_120kV_sharpe)
+
+# X-ray image hist equal
+X_image_80kV_hist = get_hist_equl(X_image_80kV_8bit_resized)
+X_image_120kV_hist = get_hist_equl(X_image_120kV_8bit_resized)
+
+# dual X-ray DES
+
+# 선형식 함수
+X_image_DES = 3*(X_image_80kV_8bit_resized)-1*(X_image_120kV_8bit_resized)
+# exp 함수
+# X_image_DES = (X_image_120kV_8bit_resized)*np.exp(X_image_80kV_canny)
+# X_image_DES = np.exp(1/X_image_120kV_sharpe)*np.exp(1/X_image_120kV_canny)
+# X_image_DES = 3 * np.log(X_image_120kV_sharpe) + 2 - (X_image_80kV_canny)
+
+
+# 출력
+get_image_show("x-ray_resized_80kV", X_image_80kV_8bit_resized)
+get_image_show("x-ray_resized_120kV", X_image_120kV_8bit_resized)
+# sharpening 출력
+get_image_show("x-ray DES sharpening ", get_sharpening_image(X_image_DES))
+get_image_show("x-ray sharpening 80kV", X_image_80kV_sharpe)
+get_image_show("x-ray sharpening 120kV", X_image_120kV_sharpe)
+# sharpening + hist equl 출력
+get_image_show("X-ray sharpe 80kV+ hist equal", X_image_80kV_sharpe_hist)
+get_image_show("X-ray sharpe 120kV+ hist equal", X_image_120kV_sharpe_hist)
+
+# contour 검출 출력
+get_image_show("contour", get_contour(X_image_80kV_hist))
+# contour_and 출력
+get_image_show("contour_and", get_contour_and(X_image_80kV_hist))
+
+
+# Edge detection 출력
+get_image_show("grad_sobel", X_image_80kV_Sobel)
+get_image_show("grad_canny", X_image_120kV_canny)
+# sharp  + edge
+get_image_show("grad_sobel+sharped", X_image_120kV_s_Sobel)
+get_image_show("grad_canny+sharped ", X_image_120kV_s_canny)
+
+
+"""
+# 엑스레이 이미지 히스토그램 분포 확인
+plt.subplots(figsize=(14, 5))
+plt.subplot(131)
+get_show_histogram(X_image_80kV_8bit_resized)
+plt.subplot(132)
+get_show_histogram(X_image_120kV_8bit_resized)
+plt.subplot(133)
+get_show_histogram(X_image_DES)
+plt.show()
+"""
+
+"""
+plt 이용한 간이 검출 
+plt.subplots(figsize=(14, 5))
+plt.subplot(131)
+get_image_show_plt("image", 2 * X_image_80kV - (X_image_120kV))
+
+plt.subplot(132)
+get_image_show_plt("image", 3 * X_image_80kV - (X_image_120kV))
+
+plt.show()
+"""
+
+"""
+src 파일 임시 테스트
+get_show_histogram(get_gray_color_file(src))
+
+get_cv2_imshow("gray_img", get_gray_color_file(src))
+get_cv2_imshow("sharped_img", get_unsharp_mask_image(get_gray_color_file(src)))
+get_cv2_imshow("resized_img", get_resize_image(get_gray_color_file(src), 0.5, 0.5))
+
+get_cv2_imshow("grad_sobel", get_gradient_Sobel(get_gray_color_file(src)))
+get_cv2_imshow("grad_canny", get_gradient_Canny(get_gray_color_file(src), 10, 30))
+
+get_cv2_imshow("resized_grad_sobel", get_gradient_Sobel(get_resize_image(get_gray_color_file(src), 3, 3)))
+get_cv2_imshow("resized_grad_canny", get_gradient_Canny(get_resize_image(get_gray_color_file(src), 3, 3), 10, 30))
+"""
