@@ -1,0 +1,163 @@
+import os
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 테스트 이미지 입력
+src = ('C:/Users/user/Desktop/CV2_TEST/Chest_2.PNG')
+
+# cv2 이미지 출력 함수
+def get_cv2_imshow(image_name, src):
+    cv2.imshow(image_name,src)
+    cv2.waitKey()
+
+# 그레이 이미지 어레이 반환 (imread -> src : string , return : ndarray)
+def get_gray_color_file(src: str)-> list :
+    return cv2.imread((src),cv2.IMREAD_GRAYSCALE)
+
+# BGR 이미지 Gray 로 변경 (cvtcolor , src : ndarray , return : ndarray)
+def get_gray_color(src:list) -> list :
+    return cv2.cvtColor(src,cv2.COLOR_BGR2GRAY)
+
+# sobel 알고리즘
+def get_gradient_Sobel(im):
+    #가우시안 블러
+    im = cv2.GaussianBlur(im, (0, 0), 2)
+    # 소벨 오퍼레이터 적용 x,y
+    grad_x = cv2.Sobel(im, cv2.CV_8U, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(im, cv2.CV_8U, 0, 1, ksize=3)
+    # x,y 방향 기울기 합치기
+    grad_image = cv2.addWeighted(np.absolute(grad_x), 0.5, np.absolute(grad_y), 0.5, 0)
+    return grad_image
+
+# Canny 알고리즘
+def get_gradient_Canny(im,th1,th2):
+    #가우시안 블러
+    im = cv2.GaussianBlur(im, (0, 0), 2)
+    grad_image_canny = cv2.Canny(im,cv2.CV_8U,th1,th2)
+    return grad_image_canny
+
+# Active contour 알고리즘
+# img (grayscaled - 8bit)
+def get_contour(img):
+    #img = cv2.imread(src)
+    #im_gray = get_gray_color(img)
+    ret, im_binary = cv2.threshold(img, 127, 255, 0)
+    # findContours() : (원본 이미지,추출모드 설정,근사방법) -> (contour, hierarchy)
+    # 추출 모드 TREE
+    #contours, hierarchy = cv2.findContours(im_binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # 추출 모드 External
+    contours, hierarchy = cv2.findContours(im_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # drawContours() : (원본이미지,contours,contour index)
+    for cnt in contours:
+        # 외각선 표시
+        cv2.drawContours(img,[cnt],0,(255,0,0),1)
+        # 내부 채우기
+        #cv2.drawContours(img,[cnt],0,(255,0,0),-1)
+
+    return img
+
+#
+def get_graph_cut(src):
+    pass
+
+
+def get_capture_camera():
+    capture = cv2.VideoCapture(0)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    while cv2.waitKey(33) < 0:
+        ret, frame = capture.read()
+        cv2.imshow("VideoFrame", frame)
+
+    capture.release()
+    cv2.destroyAllWindows()
+
+def get_capture_camera_canny():
+    capture = cv2.VideoCapture(0)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    while cv2.waitKey(33) < 0:
+        ret, frame = capture.read()
+        gray_frame = get_gray_color(frame)
+        canny = get_gradient_Canny(gray_frame,25,55)
+
+        cv2.imshow("VideoFrame_Edge", canny)
+
+    capture.release()
+    cv2.destroyAllWindows()
+
+def get_capture_camera_contour():
+    capture = cv2.VideoCapture(0)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    while cv2.waitKey(33) < 0:
+        ret, frame = capture.read()
+        gray_frame = get_gray_color(frame)
+        contour = get_contour(gray_frame)
+
+        cv2.imshow("VideoFrame_contour", contour)
+
+    capture.release()
+    cv2.destroyAllWindows()
+
+
+
+def get_recording_video():
+    # 기본 카메라 객체 생성
+    cap = cv2.VideoCapture(0)
+
+    # 웹캠의 속성 값을 받아오기
+    # 정수 형태로 변환하기 위해 round
+    w = round(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = round(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)  # 카메라에 따라 값이 정상적, 비정상적
+
+    # fourcc 값 받아오기, *는 문자를 풀어쓰는 방식, *'DIVX' == 'D', 'I', 'V', 'X'
+    fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+
+    # 1프레임과 다음 프레임 사이의 간격 설정
+    delay = round(500 / fps)
+
+    # 웹캠으로 찰영한 영상을 저장하기
+    # cv2.VideoWriter 객체 생성, 기존에 받아온 속성값 입력
+    out = cv2.VideoWriter('output_origin.avi', fourcc, fps, (w, h))
+    out_canny = cv2.VideoWriter('output_canny.avi', fourcc, fps, (w, h))
+
+    # 프레임을 저장
+    while True:
+        ret, frame = cap.read()  # 카메라의 ret, frame 값 받아오기
+
+        #inversed = ~frame  # 반전영상 ~ 붙여서 반전시킴
+        edge = cv2.Canny(frame, 25, 55)  # 윤곽선
+
+        # 윤곽선은 그레이스케일 영상이므로 저장이 안된다. 컬러 영상으로 변경
+        edge_color = cv2.cvtColor(edge, cv2.COLOR_GRAY2BGR)
+
+        out.write(frame)
+        out_canny.write(edge_color)  # 영상 데이터만 저장. 소리는 X
+
+        cv2.imshow('frame', frame)
+        cv2.imshow('edge', edge)
+        # cv2.imshow('inversed', inversed)
+
+        if cv2.waitKey(delay) == 27:  # esc를 누르면 강제 종료
+            break
+
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
+
+
+
+#get_recording_video()
+#get_capture_camera_contour()
+#get_capture_camera_canny()
+#get_capture_camera()
+
+get_cv2_imshow("test image",get_gray_color_file(src))
+get_cv2_imshow("grad_canny", get_gradient_Canny(get_gray_color_file(src), 10, 30))
+get_cv2_imshow("contour image",get_contour(get_gray_color_file(src)))
