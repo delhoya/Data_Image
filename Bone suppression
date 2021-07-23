@@ -1,0 +1,170 @@
+################################################
+# Final code for bone suppression
+################################################
+import os
+import struct
+import numpy as np
+import operator
+from numpy import arange
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+
+
+def objective(x, a, b):
+    return a * np.log(x) + b
+
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx, array[idx]
+
+### constant ###
+Npixel_x = 200
+Npixel_y = 200
+Fit_x_min = 2500
+Fit_x_max = 3600
+Scintillator = ['CsI','GOS']    #'CsI' or 'GOS'
+
+print(Scintillator[0], Scintillator[1])
+
+### variable ###
+ii=0
+Nfile_CSI = 0
+Nfile_GOS = 0
+
+Boundary_x1=[]
+Boundary_x2=[]
+Boundary_y1=[]
+Boundary_y2=[]
+
+output_CsI = []
+output_GOS = []
+
+
+# setting path to input file
+inDirectory = 'C:/Users/user/Desktop/chest_CsI_GOS/'
+mylist = os.listdir(inDirectory)
+print(len(mylist))
+
+for j in range(2):
+    print(j, 'reading -- ', Scintillator[j], ' data')
+    title_image_1 = Scintillator[j] + '-layer Projection '
+    title_image_2 = Scintillator[j] + '-layer Norm-Proj. '
+    title_image_3 = Scintillator[j] + '-layer Inverted '
+    title_image_4 = Scintillator[j] + '-layer Norm-Invert. '
+    for i in range(len(mylist)):
+        #print(i, mylist[i])
+        input_name = mylist[i]
+        split_name = input_name.split('_')
+
+        if(split_name[1] == Scintillator[j]):
+
+            filename = inDirectory + input_name
+            ii = ii+1
+
+            with open(filename, 'rb') as file:
+                fileContent = file.read()
+                Nbins = len(fileContent) // 4
+                print(Nbins)
+                data = struct.unpack('f' * Nbins, fileContent)
+                print('input file: ', input_name)
+
+                if ii == 1:
+                    avrg_data = np.array(data)
+                else:
+                    avrg_data = avrg_data + np.array(data)
+
+                print(min(avrg_data), max(avrg_data))
+                print(len(avrg_data))
+
+    avrg_data = avrg_data/ii
+
+    if j==0:
+        proj_CSI = avrg_data
+    elif j==1:
+        proj_GOS = avrg_data
+
+    print(min(avrg_data), max(avrg_data))
+    print(len(avrg_data))
+    Npixel_air = 5*200
+    air = sum(avrg_data[(len(avrg_data) - Npixel_air):])/Npixel_air
+    norm_avrg_data = avrg_data/air
+    invert_avrg_data = - avrg_data + air
+    out_invert = invert_avrg_data
+
+    invert_avrg_data = invert_avrg_data.clip(min=1)
+
+    norm_invert_avrg = invert_avrg_data/max(invert_avrg_data)
+    print('len:', len(invert_avrg_data), 'max:', max(invert_avrg_data))
+
+    avrg_data = np.reshape(avrg_data, (Npixel_y, Npixel_x))
+    norm_avrg_data = np.reshape(norm_avrg_data, (Npixel_y, Npixel_x))
+    invert_avrg_data = np.reshape(invert_avrg_data, (Npixel_y, Npixel_x))
+    norm_invert_avrg = np.reshape(norm_invert_avrg, (Npixel_y, Npixel_x))
+
+    plt.subplots(figsize=(18, 4))
+
+    plt.subplot(1, 4, 1)
+    plt.title(title_image_1)
+    plt.imshow(avrg_data)
+    plt.colorbar()
+    plt.subplot(1, 4, 2)
+    plt.title(title_image_2)
+    plt.imshow(norm_avrg_data)
+    plt.colorbar()
+    plt.subplot(1, 4, 3)
+    plt.title(title_image_3)
+    plt.imshow(invert_avrg_data)
+    plt.colorbar()
+    plt.subplot(1, 4, 4)
+    plt.title(title_image_4)
+    plt.imshow(norm_invert_avrg)
+    plt.colorbar()
+    plt.show()
+
+    # INITILIZATION
+    del avrg_data
+    ii = 0
+
+print('data length for CsI & GOS', len(proj_CSI), len(proj_GOS))
+
+L = sorted(zip(proj_CSI,proj_GOS),key=operator.itemgetter(0))
+new_x, new_y = zip(*L)
+
+indx_min, value_min = find_nearest(new_x, Fit_x_min)
+print(Fit_x_min," : indx = ", indx_min," value = ", value_min)
+print(indx_min, new_x[indx_min], new_y[indx_min])
+
+indx_max, value_max = find_nearest(new_x, Fit_x_max)
+print(Fit_x_max," : indx = ", indx_max," value = ", value_max)
+print(indx_max, new_x[indx_max], new_y[indx_max])
+
+
+popt, _ = curve_fit(objective, new_x[indx_min:indx_max], new_y[indx_min:indx_max])
+a, b = popt
+x_line = arange(Fit_x_min, max(new_x), 1)
+y_line = objective(x_line, a, b)
+print('Fit = ', a, '* log(x) + ', b)
+
+fig, ax = plt.subplots(figsize=(10,6))
+ax.scatter(x = proj_CSI, y = proj_GOS)
+plt.xlabel('CsI projection')
+plt.ylabel('GOS projection')
+plt.plot(x_line, y_line, '--', color = 'red')
+plt.show()
+
+
+subtraction = []
+for i in range(len(proj_CSI)):
+    data_subtraction = a * np.log(proj_CSI[i]) + b - proj_GOS[i]
+    if(data_subtraction>0):
+        data_subtraction = 0
+    subtraction.append(data_subtraction)
+
+subtraction = np.reshape(subtraction, (Npixel_y, Npixel_x))
+
+plt.subplots(figsize=(18, 16))
+plt.title('bone_subtraction')
+plt.imshow(subtraction)
+plt.colorbar()
+plt.show()
